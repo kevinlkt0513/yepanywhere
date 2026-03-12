@@ -1,4 +1,4 @@
-import type { UploadedFile } from "@yep-anywhere/shared";
+import type { ProviderName, UploadedFile } from "@yep-anywhere/shared";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -71,6 +71,8 @@ interface Props {
   supportsPermissionMode?: boolean;
   /** Whether the provider supports thinking toggle (default: true) */
   supportsThinkingToggle?: boolean;
+  /** Active provider for provider-aware thinking controls */
+  providerName?: ProviderName | null;
   /** Available slash commands (without "/" prefix) */
   slashCommands?: string[];
   /** Callback for custom client-side commands (e.g., "model"). Return true if handled. */
@@ -101,6 +103,7 @@ export function MessageInput({
   uploadProgress = [],
   supportsPermissionMode = true,
   supportsThinkingToggle = true,
+  providerName,
   slashCommands = [],
   onCustomCommand,
 }: Props) {
@@ -420,6 +423,7 @@ export function MessageInput({
             onModeChange={onModeChange}
             isHeld={isHeld}
             onHoldChange={onHoldChange}
+            providerName={providerName}
             supportsPermissionMode={supportsPermissionMode}
             supportsThinkingToggle={supportsThinkingToggle}
             canAttach={canAttach}

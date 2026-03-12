@@ -896,7 +896,7 @@ export class CodexProvider implements AgentProvider {
     thinking?: import("@yep-anywhere/shared").ThinkingConfig,
   ): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
     if (thinking?.type === "disabled") {
-      return "low";
+      return "none";
     }
     if (!effort) {
       return undefined;

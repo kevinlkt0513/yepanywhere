@@ -21,7 +21,9 @@ import { useConnection } from "../hooks/useConnection";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import {
   getModelSetting,
-  getThinkingSetting,
+  getNextThinkingToggleState,
+  getThinkingSettingForProvider,
+  getThinkingToggleState,
   useModelSettings,
 } from "../hooks/useModelSettings";
 import {
@@ -114,7 +116,8 @@ export function NewSessionForm({
   const voiceButtonRef = useRef<VoiceInputButtonRef>(null);
 
   // Thinking toggle state
-  const { thinkingMode, cycleThinkingMode, thinkingLevel } = useModelSettings();
+  const { thinkingMode, setThinkingMode, thinkingLevel, setThinkingLevel } =
+    useModelSettings();
 
   // Connection for uploads (uses WebSocket when enabled)
   const connection = useConnection();
@@ -140,6 +143,11 @@ export function NewSessionForm({
     selectedProviderInfo?.supportsPermissionMode ?? true;
   const supportsThinkingToggle =
     selectedProviderInfo?.supportsThinkingToggle ?? true;
+  const thinkingToggleState = getThinkingToggleState(
+    selectedProvider,
+    thinkingMode,
+    thinkingLevel,
+  );
 
   // Set default provider when providers load
   useEffect(() => {
@@ -205,6 +213,18 @@ export function NewSessionForm({
   const handleModelSelect = useCallback((selected: string[]) => {
     setSelectedModel(selected[0] ?? null);
   }, []);
+
+  const handleThinkingToggle = () => {
+    const next = getNextThinkingToggleState(
+      selectedProvider,
+      thinkingMode,
+      thinkingLevel,
+    );
+    setThinkingMode(next.thinkingMode);
+    if (next.effortLevel !== thinkingLevel) {
+      setThinkingLevel(next.effortLevel);
+    }
+  };
 
   // Combined display text: committed text + interim transcript
   const displayText = interimTranscript
@@ -299,7 +319,7 @@ export function NewSessionForm({
       const uploadedFiles: UploadedFile[] = [];
 
       // Get model and thinking settings
-      const thinking = getThinkingSetting();
+      const thinking = getThinkingSettingForProvider(selectedProvider);
       const sessionOptions = {
         mode,
         model: selectedModel ?? undefined,
@@ -551,17 +571,11 @@ export function NewSessionForm({
           {supportsThinkingToggle && (
             <button
               type="button"
-              className={`toolbar-button thinking-toggle-button ${thinkingMode !== "off" ? `active ${thinkingMode}` : ""}`}
-              onClick={cycleThinkingMode}
+              className={`toolbar-button thinking-toggle-button ${thinkingToggleState.className}`}
+              onClick={handleThinkingToggle}
               disabled={isStarting}
-              title={
-                thinkingMode === "off"
-                  ? "Thinking: off"
-                  : thinkingMode === "auto"
-                    ? "Thinking: auto"
-                    : `Thinking: on (${thinkingLevel})`
-              }
-              aria-label={`Thinking mode: ${thinkingMode}`}
+              title={thinkingToggleState.title}
+              aria-label={thinkingToggleState.ariaLabel}
             >
               <svg
                 width="18"
@@ -576,7 +590,7 @@ export function NewSessionForm({
               >
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
-                {thinkingMode === "auto" && (
+                {thinkingToggleState.showAutoBadge && (
                   <g>
                     <circle
                       cx="19"

@@ -1,6 +1,10 @@
-import type { UploadedFile } from "@yep-anywhere/shared";
+import type { ProviderName, UploadedFile } from "@yep-anywhere/shared";
 import type { RefObject } from "react";
-import { useModelSettings } from "../hooks/useModelSettings";
+import {
+  getNextThinkingToggleState,
+  getThinkingToggleState,
+  useModelSettings,
+} from "../hooks/useModelSettings";
 import type { ContextUsage, PermissionMode } from "../types";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { ModeSelector } from "./ModeSelector";
@@ -15,6 +19,7 @@ export interface MessageInputToolbarProps {
   onHoldChange?: (held: boolean) => void;
 
   // Provider capability flags (default to true for backwards compatibility)
+  providerName?: ProviderName | null;
   supportsPermissionMode?: boolean;
   supportsThinkingToggle?: boolean;
 
@@ -59,6 +64,7 @@ export function MessageInputToolbar({
   onModeChange,
   isHeld,
   onHoldChange,
+  providerName,
   supportsPermissionMode = true,
   supportsThinkingToggle = true,
   canAttach,
@@ -81,7 +87,25 @@ export function MessageInputToolbar({
   disabled,
   pendingApproval,
 }: MessageInputToolbarProps) {
-  const { thinkingMode, cycleThinkingMode, thinkingLevel } = useModelSettings();
+  const { thinkingMode, setThinkingMode, thinkingLevel, setThinkingLevel } =
+    useModelSettings();
+  const thinkingToggleState = getThinkingToggleState(
+    providerName,
+    thinkingMode,
+    thinkingLevel,
+  );
+
+  const handleThinkingToggle = () => {
+    const next = getNextThinkingToggleState(
+      providerName,
+      thinkingMode,
+      thinkingLevel,
+    );
+    setThinkingMode(next.thinkingMode);
+    if (next.effortLevel !== thinkingLevel) {
+      setThinkingLevel(next.effortLevel);
+    }
+  };
 
   return (
     <div className="message-input-toolbar">
@@ -123,16 +147,10 @@ export function MessageInputToolbar({
         {supportsThinkingToggle && (
           <button
             type="button"
-            className={`thinking-toggle-button ${thinkingMode !== "off" ? `active ${thinkingMode}` : ""}`}
-            onClick={cycleThinkingMode}
-            title={
-              thinkingMode === "off"
-                ? "Thinking: off"
-                : thinkingMode === "auto"
-                  ? "Thinking: auto"
-                  : `Thinking: on (${thinkingLevel})`
-            }
-            aria-label={`Thinking mode: ${thinkingMode}`}
+            className={`thinking-toggle-button ${thinkingToggleState.className}`}
+            onClick={handleThinkingToggle}
+            title={thinkingToggleState.title}
+            aria-label={thinkingToggleState.ariaLabel}
           >
             <svg
               width="16"
@@ -147,7 +165,7 @@ export function MessageInputToolbar({
             >
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
-              {thinkingMode === "auto" && (
+              {thinkingToggleState.showAutoBadge && (
                 <g>
                   <circle
                     cx="19"

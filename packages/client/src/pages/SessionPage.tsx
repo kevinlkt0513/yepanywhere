@@ -25,7 +25,10 @@ import { useDeveloperMode } from "../hooks/useDeveloperMode";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { DraftControls } from "../hooks/useDraftPersistence";
 import { useEngagementTracking } from "../hooks/useEngagementTracking";
-import { getModelSetting, getThinkingSetting } from "../hooks/useModelSettings";
+import {
+  getModelSetting,
+  getThinkingSettingForProvider,
+} from "../hooks/useModelSettings";
 import { useProject } from "../hooks/useProjects";
 import { useProviders } from "../hooks/useProviders";
 import { recordSessionVisit } from "../hooks/useRecentSessions";
@@ -356,7 +359,7 @@ function SessionPageContent({
         // Use session's existing model if available (important for non-Claude providers),
         // otherwise fall back to user's model preference for new Claude sessions
         const model = session?.model ?? getModelSetting();
-        const thinking = getThinkingSetting();
+        const thinking = getThinkingSettingForProvider(effectiveProvider);
         // Use effectiveProvider to ensure correct provider even if session data hasn't loaded
         // effectiveProvider = session?.provider ?? initialProvider (from navigation state)
         const result = await api.resumeSession(
@@ -377,7 +380,7 @@ function SessionPageContent({
         setStatus({ owner: "self", processId: result.processId });
       } else {
         // Queue to existing process with current permission mode and thinking setting
-        const thinking = getThinkingSetting();
+        const thinking = getThinkingSettingForProvider(effectiveProvider);
         const result = await api.queueMessage(
           sessionId,
           text,
@@ -405,7 +408,7 @@ function SessionPageContent({
       if (is404) {
         try {
           const model = session?.model ?? getModelSetting();
-          const thinking = getThinkingSetting();
+          const thinking = getThinkingSettingForProvider(effectiveProvider);
           const result = await api.resumeSession(
             projectId,
             sessionId,
@@ -463,7 +466,7 @@ function SessionPageContent({
     }
 
     try {
-      const thinking = getThinkingSetting();
+      const thinking = getThinkingSettingForProvider(effectiveProvider);
       await api.queueMessage(
         sessionId,
         text,
@@ -1148,6 +1151,7 @@ function SessionPageContent({
                     onModeChange={setPermissionMode}
                     isHeld={holdModeEnabled ? isHeld : undefined}
                     onHoldChange={holdModeEnabled ? setHold : undefined}
+                    providerName={effectiveProvider}
                     supportsPermissionMode={supportsPermissionMode}
                     supportsThinkingToggle={supportsThinkingToggle}
                     contextUsage={session?.contextUsage}
@@ -1190,6 +1194,7 @@ function SessionPageContent({
                 onModeChange={setPermissionMode}
                 isHeld={holdModeEnabled ? isHeld : undefined}
                 onHoldChange={holdModeEnabled ? setHold : undefined}
+                providerName={effectiveProvider}
                 supportsPermissionMode={supportsPermissionMode}
                 supportsThinkingToggle={supportsThinkingToggle}
                 isRunning={status.owner === "self"}

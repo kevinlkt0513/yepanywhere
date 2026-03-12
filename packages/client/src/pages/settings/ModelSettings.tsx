@@ -14,7 +14,7 @@ export function ModelSettings() {
         <div className="settings-item">
           <div className="settings-item-info">
             <strong>Model</strong>
-            <p>Select which Claude model to use for new sessions.</p>
+            <p>Select which default model preset to use for new sessions.</p>
           </div>
           <div className="font-size-selector">
             {MODEL_OPTIONS.map((opt) => (
@@ -33,8 +33,8 @@ export function ModelSettings() {
           <div className="settings-item-info">
             <strong>Effort Level</strong>
             <p>
-              Controls how much effort Claude puts into responses when thinking
-              is set to "on". Higher levels use more tokens.
+              Controls response effort when thinking or reasoning is enabled.
+              For Codex/GPT models, Max maps to `xhigh` reasoning effort.
             </p>
           </div>
           <div className="font-size-selector">

@@ -1,5 +1,6 @@
 import type {
   EffortLevel,
+  ProviderName,
   ThinkingMode,
   ThinkingOption,
 } from "@yep-anywhere/shared";
@@ -80,6 +81,12 @@ function saveEffortLevel(level: EffortLevel) {
 }
 
 const THINKING_MODES: ThinkingMode[] = ["off", "auto", "on"];
+const CODEX_REASONING_LEVELS: readonly EffortLevel[] = [
+  "low",
+  "medium",
+  "high",
+  "max",
+];
 
 function loadThinkingMode(): ThinkingMode {
   // Try new key first
@@ -198,7 +205,21 @@ export function getModelSetting(): ModelOption {
  * - "on:level" for forced-on thinking at that effort level
  */
 export function getThinkingSetting(): ThinkingOption {
+  return getThinkingSettingForProvider();
+}
+
+/**
+ * Get thinking setting for a specific provider.
+ * Codex uses reasoning effort directly, so the effort level is applied whenever
+ * reasoning is enabled instead of requiring the Claude-style "on" mode.
+ */
+export function getThinkingSettingForProvider(
+  provider?: ProviderName | null,
+): ThinkingOption {
   const mode = loadThinkingMode();
+  if (provider === "codex") {
+    return mode === "off" ? "off" : loadEffortLevel();
+  }
   if (mode === "off") return "off";
   if (mode === "auto") return "auto";
   return `on:${loadEffortLevel()}`;
@@ -209,6 +230,94 @@ export function getThinkingSetting(): ThinkingOption {
  */
 export function getThinkingMode(): ThinkingMode {
   return loadThinkingMode();
+}
+
+export interface ThinkingToggleState {
+  className: string;
+  title: string;
+  ariaLabel: string;
+  showAutoBadge: boolean;
+}
+
+/**
+ * Provider-aware toggle state for the inline thinking button.
+ */
+export function getThinkingToggleState(
+  provider: ProviderName | null | undefined,
+  thinkingMode: ThinkingMode,
+  effortLevel: EffortLevel,
+): ThinkingToggleState {
+  if (provider === "codex") {
+    if (thinkingMode === "off") {
+      return {
+        className: "",
+        title: "Reasoning: off",
+        ariaLabel: "Reasoning level: off",
+        showAutoBadge: false,
+      };
+    }
+    return {
+      className: "active on",
+      title: `Reasoning: ${effortLevel}`,
+      ariaLabel: `Reasoning level: ${effortLevel}`,
+      showAutoBadge: false,
+    };
+  }
+
+  return {
+    className: thinkingMode !== "off" ? `active ${thinkingMode}` : "",
+    title:
+      thinkingMode === "off"
+        ? "Thinking: off"
+        : thinkingMode === "auto"
+          ? "Thinking: auto"
+          : `Thinking: on (${effortLevel})`,
+    ariaLabel: `Thinking mode: ${thinkingMode}`,
+    showAutoBadge: thinkingMode === "auto",
+  };
+}
+
+/**
+ * Provider-aware next state for the inline thinking toggle button.
+ * Codex cycles through reasoning levels directly:
+ * off -> low -> medium -> high -> max -> off
+ */
+export function getNextThinkingToggleState(
+  provider: ProviderName | null | undefined,
+  thinkingMode: ThinkingMode,
+  effortLevel: EffortLevel,
+): {
+  thinkingMode: ThinkingMode;
+  effortLevel: EffortLevel;
+} {
+  if (provider !== "codex") {
+    const idx = THINKING_MODES.indexOf(thinkingMode);
+    const next = THINKING_MODES[(idx + 1) % THINKING_MODES.length] ?? "off";
+    return {
+      thinkingMode: next,
+      effortLevel,
+    };
+  }
+
+  if (thinkingMode === "off") {
+    return {
+      thinkingMode: "on",
+      effortLevel: CODEX_REASONING_LEVELS[0] ?? "low",
+    };
+  }
+
+  const index = CODEX_REASONING_LEVELS.indexOf(effortLevel);
+  if (index === -1 || index === CODEX_REASONING_LEVELS.length - 1) {
+    return {
+      thinkingMode: "off",
+      effortLevel,
+    };
+  }
+
+  return {
+    thinkingMode: "on",
+    effortLevel: CODEX_REASONING_LEVELS[index + 1] ?? effortLevel,
+  };
 }
 
 /**

@@ -541,3 +541,30 @@ describe("CodexProvider Configuration", () => {
     expect(provider.displayName).toBe("Codex");
   });
 });
+
+describe("CodexProvider reasoning effort mapping", () => {
+  function createProviderBridge() {
+    return new CodexProvider() as unknown as {
+      mapEffortToReasoningEffort: (
+        effort?: "low" | "medium" | "high" | "max",
+        thinking?: { type: "adaptive" | "enabled" | "disabled" },
+      ) => "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+    };
+  }
+
+  it("maps disabled thinking to none", () => {
+    const provider = createProviderBridge();
+
+    expect(
+      provider.mapEffortToReasoningEffort("high", { type: "disabled" }),
+    ).toBe("none");
+  });
+
+  it("maps max effort to xhigh", () => {
+    const provider = createProviderBridge();
+
+    expect(
+      provider.mapEffortToReasoningEffort("max", { type: "adaptive" }),
+    ).toBe("xhigh");
+  });
+});
