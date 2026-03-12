@@ -35,6 +35,8 @@ export function ModelSettings() {
             <p>
               Controls response effort when thinking or reasoning is enabled.
               For Codex/GPT models, Max maps to `xhigh` reasoning effort.
+              Selecting a level here also enables thinking by default for new
+              sessions.
             </p>
           </div>
           <div className="font-size-selector">

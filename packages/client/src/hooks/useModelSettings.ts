@@ -104,6 +104,16 @@ function loadThinkingMode(): ThinkingMode {
     saveThinkingMode("auto");
     return "auto";
   }
+  const storedLevel = getServerScoped(
+    "thinkingLevel",
+    LEGACY_KEYS.thinkingLevel,
+  );
+  if (storedLevel) {
+    // Older settings screens only persisted the effort level. If we have an
+    // explicit level but no mode, treat that as "thinking enabled".
+    saveThinkingMode("on");
+    return "on";
+  }
   return "off";
 }
 
@@ -146,10 +156,17 @@ export function useModelSettings() {
     saveModel(m);
   }, []);
 
-  const setEffortLevel = useCallback((level: EffortLevel) => {
-    setEffortLevelState(level);
-    saveEffortLevel(level);
-  }, []);
+  const setEffortLevel = useCallback(
+    (level: EffortLevel) => {
+      setEffortLevelState(level);
+      saveEffortLevel(level);
+      if (thinkingMode === "off") {
+        setThinkingModeState("on");
+        saveThinkingMode("on");
+      }
+    },
+    [thinkingMode],
+  );
 
   const setThinkingMode = useCallback((mode: ThinkingMode) => {
     setThinkingModeState(mode);
