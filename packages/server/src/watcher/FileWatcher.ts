@@ -22,6 +22,15 @@ export interface FileWatcherOptions {
    * Useful on platforms where fs.watch may miss deep file writes.
    */
   periodicRescanMs?: number;
+  /**
+   * Optional fallback full-tree rescan interval (ms) used when native fs.watch
+   * is unavailable or starts failing (for example EMFILE / ENOSPC).
+   */
+  fallbackRescanMs?: number;
+  /** Optional watch factory for testing. Defaults to node:fs.watch */
+  watchFactory?: typeof fs.watch;
+  /** Disable native fs.watch and use rescan-only mode instead. */
+  disableNativeWatch?: boolean;
 }
 
 export class FileWatcher {
@@ -30,11 +39,16 @@ export class FileWatcher {
   private eventBus: EventBus;
   private debounceMs: number;
   private periodicRescanMs: number;
+  private fallbackRescanMs: number;
+  private watchFactory: typeof fs.watch;
+  private disableNativeWatch: boolean;
   private watcher: fs.FSWatcher | null = null;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private rescanTimer: NodeJS.Timeout | null = null;
   private rescanInProgress = false;
   private periodicRescanTimer: NodeJS.Timeout | null = null;
+  private activeRescanIntervalMs = 0;
+  private activeRescanMode: "configured" | "fallback" | null = null;
   private knownFiles: Set<string> = new Set();
   private knownFileMtimes: Map<string, number> = new Map();
 
@@ -44,6 +58,11 @@ export class FileWatcher {
     this.eventBus = options.eventBus;
     this.debounceMs = options.debounceMs ?? 200;
     this.periodicRescanMs = options.periodicRescanMs ?? 0;
+    this.fallbackRescanMs = options.fallbackRescanMs ?? 5000;
+    this.watchFactory = options.watchFactory ?? fs.watch;
+    this.disableNativeWatch =
+      options.disableNativeWatch ??
+      process.env.FILE_WATCH_DISABLE_NATIVE === "true";
   }
 
   /**
@@ -57,38 +76,25 @@ export class FileWatcher {
     // Build initial file list for detecting create vs modify
     this.scanExistingFiles();
 
-    try {
-      this.watcher = fs.watch(
-        this.watchDir,
-        { recursive: true },
-        (eventType, filename) => {
-          if (!filename) {
-            getLogger().debug(
-              `[FileWatcher] Raw event provider=${this.provider} type=${eventType} file=<null> path=${this.watchDir}`,
-            );
-            this.scheduleRescan();
-            return;
-          }
-          this.handleFileEvent(eventType, filename);
-        },
+    if (this.disableNativeWatch) {
+      getLogger().info(
+        `[FileWatcher] Native fs.watch disabled provider=${this.provider} path=${this.watchDir}`,
       );
-
-      this.watcher.on("error", (error) => {
-        console.error("[FileWatcher] Error:", error);
-      });
-
-      getLogger().info(`[FileWatcher] Watching ${this.watchDir}`);
-
-      if (this.periodicRescanMs > 0) {
-        this.periodicRescanTimer = setInterval(() => {
-          this.rescanAndEmit();
-        }, this.periodicRescanMs);
-        getLogger().info(
-          `[FileWatcher] Periodic rescan enabled (${this.periodicRescanMs}ms) for ${this.watchDir}`,
+      if (this.periodicRescanMs <= 0) {
+        this.enableFallbackRescan(
+          this.fallbackRescanMs,
+          "native watcher disabled by configuration",
         );
       }
-    } catch (error) {
-      console.error("[FileWatcher] Failed to start:", error);
+    } else if (!this.startNativeWatcher()) {
+      this.enableFallbackRescan(
+        this.fallbackRescanMs,
+        "native watcher unavailable at startup",
+      );
+    }
+
+    if (this.periodicRescanMs > 0) {
+      this.ensureRescanTimer(this.periodicRescanMs, "configured");
     }
   }
 
@@ -114,6 +120,8 @@ export class FileWatcher {
       clearInterval(this.periodicRescanTimer);
       this.periodicRescanTimer = null;
     }
+    this.activeRescanIntervalMs = 0;
+    this.activeRescanMode = null;
     this.knownFiles.clear();
     this.knownFileMtimes.clear();
 
@@ -124,7 +132,126 @@ export class FileWatcher {
    * Check if watcher is active.
    */
   get isWatching(): boolean {
-    return this.watcher !== null;
+    return this.watcher !== null || this.periodicRescanTimer !== null;
+  }
+
+  private startNativeWatcher(): boolean {
+    try {
+      this.watcher = this.watchFactory(
+        this.watchDir,
+        { recursive: true },
+        (eventType, filename) => {
+          if (!filename) {
+            getLogger().debug(
+              `[FileWatcher] Raw event provider=${this.provider} type=${eventType} file=<null> path=${this.watchDir}`,
+            );
+            this.scheduleRescan();
+            return;
+          }
+          this.handleFileEvent(eventType, filename);
+        },
+      );
+
+      this.watcher.on("error", (error) => {
+        this.handleWatcherError(error);
+      });
+
+      getLogger().info(
+        `[FileWatcher] Watching provider=${this.provider} path=${this.watchDir}`,
+      );
+
+      return true;
+    } catch (error) {
+      this.logWatcherError("Failed to start", error);
+      return false;
+    }
+  }
+
+  private handleWatcherError(error: unknown): void {
+    this.logWatcherError("Error", error);
+
+    if (this.isRecoverableWatchError(error)) {
+      this.closeNativeWatcher();
+      this.enableFallbackRescan(
+        this.fallbackRescanMs,
+        "native watcher hit descriptor limit",
+      );
+    }
+  }
+
+  private logWatcherError(prefix: string, error: unknown): void {
+    const message =
+      error instanceof Error ? (error.stack ?? error.message) : String(error);
+    getLogger().warn(
+      `[FileWatcher] ${prefix} provider=${this.provider} path=${this.watchDir} error=${message}`,
+    );
+  }
+
+  private isRecoverableWatchError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+
+    const code = "code" in error ? error.code : undefined;
+    return code === "EMFILE" || code === "ENOSPC";
+  }
+
+  private closeNativeWatcher(): void {
+    if (!this.watcher) {
+      return;
+    }
+
+    try {
+      this.watcher.close();
+    } catch {
+      // Ignore close errors during degraded-mode transition.
+    }
+    this.watcher = null;
+  }
+
+  private enableFallbackRescan(intervalMs: number, reason: string): void {
+    if (intervalMs <= 0) {
+      getLogger().warn(
+        `[FileWatcher] Fallback rescan disabled provider=${this.provider} path=${this.watchDir} reason=${reason}`,
+      );
+      return;
+    }
+
+    this.ensureRescanTimer(intervalMs, "fallback");
+    getLogger().warn(
+      `[FileWatcher] Fallback rescan enabled provider=${this.provider} path=${this.watchDir} intervalMs=${intervalMs} reason=${reason}`,
+    );
+  }
+
+  private ensureRescanTimer(
+    intervalMs: number,
+    mode: "configured" | "fallback",
+  ): void {
+    if (
+      this.periodicRescanTimer &&
+      this.activeRescanIntervalMs === intervalMs &&
+      this.activeRescanMode === mode
+    ) {
+      return;
+    }
+
+    if (this.periodicRescanTimer) {
+      clearInterval(this.periodicRescanTimer);
+    }
+
+    this.periodicRescanTimer = setInterval(() => {
+      this.rescanAndEmit();
+    }, intervalMs);
+    this.activeRescanIntervalMs = intervalMs;
+    this.activeRescanMode = mode;
+
+    const label =
+      mode === "configured"
+        ? "Periodic rescan enabled"
+        : "Fallback rescan active";
+    getLogger().info(
+      `[FileWatcher] ${label} provider=${this.provider} intervalMs=${intervalMs} path=${this.watchDir}`,
+    );
   }
 
   private scanExistingFiles(): void {
