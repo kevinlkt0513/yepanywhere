@@ -33,14 +33,17 @@ export interface LogConfig {
 }
 
 const defaultConfig: LogConfig = {
-  logDir: path.join(os.homedir(), ".yep-anywhere", "logs"),
-  logFile: "server.log",
+  logDir:
+    process.env.LOG_DIR ?? path.join(os.homedir(), ".yep-anywhere", "logs"),
+  logFile: process.env.LOG_FILE ?? "server.log",
   consoleLevel: (process.env.LOG_LEVEL as LogLevel) || "info",
   fileLevel:
     (process.env.LOG_FILE_LEVEL as LogLevel) ||
     (process.env.LOG_LEVEL as LogLevel) ||
     "info",
-  logToFile: true,
+  logToFile: !["false", "0", "no", "off"].includes(
+    (process.env.LOG_TO_FILE ?? "false").toLowerCase(),
+  ),
   prettyPrint: !["false", "0", "no", "off"].includes(
     (process.env.LOG_PRETTY ?? "").toLowerCase(),
   ),
